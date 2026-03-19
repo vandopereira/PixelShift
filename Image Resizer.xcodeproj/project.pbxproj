@@ -11,6 +11,7 @@
 		A10000000000000000000012 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* ContentView.swift */; };
 		A10000000000000000000013 /* EditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* EditorViewModel.swift */; };
 		A10000000000000000000014 /* ImageProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* ImageProcessor.swift */; };
+		A10000000000000000000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -18,8 +19,9 @@
 		A10000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A10000000000000000000003 /* EditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViewModel.swift; sourceTree = "<group>"; };
 		A10000000000000000000004 /* ImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageProcessor.swift; sourceTree = "<group>"; };
-		A10000000000000000000005 /* Image Resizer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "Image Resizer.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000005 /* PixelShift.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = "PixelShift.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000006 /* Image Resizer.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Image Resizer.entitlements"; sourceTree = "<group>"; };
+		A10000000000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,13 +52,14 @@
 				A10000000000000000000002 /* ContentView.swift */,
 				A10000000000000000000003 /* EditorViewModel.swift */,
 				A10000000000000000000004 /* ImageProcessor.swift */,
+				A10000000000000000000007 /* Assets.xcassets */,
 				A10000000000000000000006 /* Image Resizer.entitlements */,
 			);
 		};
 		A10000000000000000000032 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A10000000000000000000005 /* Image Resizer.app */,
+				A10000000000000000000005 /* PixelShift.app */,
 			);
 			sourceTree = "<group>";
 		};
@@ -81,7 +84,7 @@
 			packageProductDependencies = (
 			);
 			productName = "Image Resizer";
-			productReference = A10000000000000000000005 /* Image Resizer.app */;
+			productReference = A10000000000000000000005 /* PixelShift.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -123,6 +126,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000015 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,7 +158,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Image Resizer";
+				INFOPLIST_KEY_CFBundleDisplayName = PixelShift;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.graphics-design";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -164,7 +168,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vando.imageresizer;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = PixelShift;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -184,7 +188,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Image Resizer";
+				INFOPLIST_KEY_CFBundleDisplayName = PixelShift;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.graphics-design";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -194,7 +198,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vando.imageresizer;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = PixelShift;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

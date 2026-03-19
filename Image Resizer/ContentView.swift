@@ -29,7 +29,7 @@ struct ContentView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Image Resizer")
+                Text("PixelShift")
                     .font(.system(size: 28, weight: .bold))
                 Text("Conversão, resize e rotação local para macOS")
                     .foregroundStyle(.secondary)
