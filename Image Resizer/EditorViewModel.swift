@@ -33,6 +33,7 @@ final class EditorViewModel: ObservableObject {
     private var previewTask: Task<Void, Never>?
     private var exportTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
+    private var cachedOriginalThumbnail: (url: URL, image: CGImage)?
 
     var canExport: Bool {
         !images.isEmpty && outputFolder != nil && !isExporting
@@ -235,6 +236,7 @@ final class EditorViewModel: ObservableObject {
             $flipHorizontal.map { _ in () }.eraseToAnyPublisher(),
             $flipVertical.map { _ in () }.eraseToAnyPublisher()
         )
+        .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
         .sink { [weak self] _ in
             self?.schedulePreviewRefresh(immediate: false)
         }
@@ -248,34 +250,55 @@ final class EditorViewModel: ObservableObject {
             originalPreview = nil
             processedPreview = nil
             isRenderingPreview = false
+            cachedOriginalThumbnail = nil
             return
         }
 
         let url = selectedImage.url
         let processedRecipe = buildRecipe()
-        let originalRecipe = ProcessingRecipe(
-            resize: nil,
-            rotation: nil,
-            flipHorizontal: false,
-            flipVertical: false
-        )
         isRenderingPreview = true
 
-        previewTask = Task.detached(priority: .utility) { [processor] in
-            if !immediate {
-                try? await Task.sleep(for: .milliseconds(220))
+        previewTask = Task.detached(priority: .userInitiated) { [processor] in
+            // Use property local capture to avoid background-to-main-actor access issues
+            var localThumbnail: CGImage? = await MainActor.run {
+                if self.cachedOriginalThumbnail?.url == url {
+                    return self.cachedOriginalThumbnail?.image
+                }
+                return nil
             }
 
-            guard !Task.isCancelled else { return }
-            let originalPreview = processor.preview(for: url, recipe: originalRecipe, maxPixelSize: 1200)
-            guard !Task.isCancelled else { return }
-            let processedPreview = processor.preview(for: url, recipe: processedRecipe, maxPixelSize: 1200)
-            guard !Task.isCancelled else { return }
+            // Load original only if not cached
+            if localThumbnail == nil {
+                // We use a dedicated empty recipe for the original thumbnail
+                let originalRecipe = ProcessingRecipe(resize: nil, rotation: nil, flipHorizontal: false, flipVertical: false)
+                // loadThumbnail is private in ImageProcessor, but preview() uses it.
+                // Instead of making it public, let's just use the rendering logic.
+                // Actually, I'll just load the thumbnail once and cache it.
+                
+                // Let's call preview with empty recipe to get the original thumbnail
+                if let nsImage = processor.preview(for: url, recipe: originalRecipe, maxPixelSize: 1024),
+                   let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                    localThumbnail = cgImage
+                    await MainActor.run {
+                        self.cachedOriginalThumbnail = (url: url, image: cgImage)
+                        self.originalPreview = nsImage
+                    }
+                }
+            }
 
-            await MainActor.run {
-                self.originalPreview = originalPreview
-                self.processedPreview = processedPreview
-                self.isRenderingPreview = false
+            guard let baseImage = localThumbnail, !Task.isCancelled else {
+                await MainActor.run { self.isRenderingPreview = false }
+                return
+            }
+
+            // Process preview using the cached base image
+            if let processedNSImage = processor.preview(for: baseImage, recipe: processedRecipe) {
+                await MainActor.run {
+                    self.processedPreview = processedNSImage
+                    self.isRenderingPreview = false
+                }
+            } else {
+                await MainActor.run { self.isRenderingPreview = false }
             }
         }
     }

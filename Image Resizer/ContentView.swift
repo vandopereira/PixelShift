@@ -15,8 +15,8 @@ struct ContentView: View {
                     header
                     Divider()
                     HSplitView {
-                        previewPane(title: "Original", image: viewModel.originalPreview)
-                        previewPane(title: "Preview", image: viewModel.processedPreview)
+                        PreviewPaneView(title: "Original", image: viewModel.originalPreview)
+                        PreviewPaneView(title: "Preview", image: viewModel.processedPreview)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     Divider()
@@ -62,14 +62,8 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    headerActions
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    headerActions
-                }
+            HStack(spacing: 12) {
+                headerActions
             }
         }
         .padding(20)
@@ -103,14 +97,17 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private func previewPane(title: String, image: NSImage?) -> some View {
+private struct PreviewPaneView: View {
+    let title: String
+    let image: NSImage?
+
+    var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Color(nsColor: .windowBackgroundColor))
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                        .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
                 )
 
             VStack(spacing: 16) {
@@ -138,7 +135,9 @@ struct ContentView: View {
             .padding(20)
         }
         .padding(20)
+        .drawingGroup()
     }
+}
 }
 
 private struct SidebarView: View {
@@ -214,21 +213,142 @@ private struct InspectorView: View {
     @ObservedObject var viewModel: EditorViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 28) {
-                    formatSection
-                    resizeSection
-                    transformSection
-                }
-
-                VStack(alignment: .leading, spacing: 18) {
-                    formatSection
-                    resizeSection
-                    transformSection
-                }
+        VStack(alignment: .leading, spacing: 24) {
+            // Replaced heavy ViewThatFits with a simpler VStack/HStack approach
+            // On macOS inspectors, a single column is usually more stable and predictable.
+            VStack(alignment: .leading, spacing: 24) {
+                FormatSectionView(outputFormat: $viewModel.outputFormat)
+                Divider()
+                ResizeSectionView(
+                    enabled: $viewModel.resizeEnabled,
+                    mode: $viewModel.resizeMode,
+                    width: $viewModel.targetWidth,
+                    height: $viewModel.targetHeight,
+                    percent: $viewModel.scalePercent
+                )
+                Divider()
+                TransformSectionView(viewModel: viewModel)
             }
 
+            StatusSectionView(viewModel: viewModel)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct FormatSectionView: View {
+    @Binding var outputFormat: OutputFormat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Formato")
+                .font(.headline)
+
+            Picker("Converter para", selection: $outputFormat) {
+                ForEach(OutputFormat.allCases) { format in
+                    Text(format.label).tag(format)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 360)
+        }
+    }
+}
+
+private struct ResizeSectionView: View {
+    @Binding var enabled: Bool
+    @Binding var mode: ResizeMode
+    @Binding var width: String
+    @Binding var height: String
+    @Binding var percent: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Resize")
+                .font(.headline)
+
+            Toggle("Aplicar resize", isOn: $enabled)
+
+            Picker("Modo", selection: $mode) {
+                ForEach(ResizeMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 360)
+            .disabled(!enabled)
+
+            if mode == .dimensions {
+                HStack {
+                    LabeledField(title: "Largura", value: $width)
+                    LabeledField(title: "Altura", value: $height)
+                }
+            } else {
+                LabeledField(title: "Percentual", value: $percent)
+                    .frame(maxWidth: 180)
+            }
+        }
+        .disabled(!enabled)
+    }
+}
+
+private struct TransformSectionView: View {
+    @ObservedObject var viewModel: EditorViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Transformações")
+                    .font(.headline)
+                Spacer()
+                Button("Resetar") {
+                    viewModel.resetTransformations()
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle("Aplicar rotação", isOn: $viewModel.rotationEnabled)
+                
+                HStack(spacing: 8) {
+                    Button("90° Esq.") {
+                        viewModel.rotationMode = .left90
+                        viewModel.rotationAngle = -90
+                    }
+                    Button("90° Dir.") {
+                        viewModel.rotationMode = .right90
+                        viewModel.rotationAngle = 90
+                    }
+                    Button("Ângulo") {
+                        viewModel.rotationMode = .custom
+                    }
+                }
+                .disabled(!viewModel.rotationEnabled)
+
+                HStack {
+                    Text("Ângulo")
+                        .font(.caption)
+                    Slider(value: $viewModel.rotationAngle, in: -180...180, step: 1)
+                        .frame(maxWidth: 220)
+                    Text("\(Int(viewModel.rotationAngle))°")
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                }
+                .disabled(!viewModel.rotationEnabled)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Espelhar horizontalmente", isOn: $viewModel.flipHorizontal)
+                Toggle("Espelhar verticalmente", isOn: $viewModel.flipVertical)
+            }
+        }
+    }
+}
+
+private struct StatusSectionView: View {
+    @ObservedObject var viewModel: EditorViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if let message = viewModel.statusMessage {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(message)
@@ -239,7 +359,6 @@ private struct InspectorView: View {
                         Button("Abrir pasta exportada") {
                             viewModel.openLastExportedFolder()
                         }
-                        .help(folder.path(percentEncoded: false))
                     }
                 }
             }
@@ -261,135 +380,6 @@ private struct InspectorView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var formatSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Formato")
-                .font(.headline)
-
-            Picker("Converter para", selection: $viewModel.outputFormat) {
-                ForEach(OutputFormat.allCases) { format in
-                    Text(format.label).tag(format)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 360)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var resizeSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Resize")
-                .font(.headline)
-
-            Toggle("Aplicar resize", isOn: $viewModel.resizeEnabled)
-
-            Picker("Modo", selection: $viewModel.resizeMode) {
-                ForEach(ResizeMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 360)
-            .disabled(!viewModel.resizeEnabled)
-
-            if viewModel.resizeMode == .dimensions {
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        LabeledField(title: "Largura", value: $viewModel.targetWidth)
-                        LabeledField(title: "Altura", value: $viewModel.targetHeight)
-                    }
-
-                    VStack(alignment: .leading) {
-                        LabeledField(title: "Largura", value: $viewModel.targetWidth)
-                        LabeledField(title: "Altura", value: $viewModel.targetHeight)
-                    }
-                }
-            } else {
-                LabeledField(title: "Percentual", value: $viewModel.scalePercent)
-                    .frame(maxWidth: 180)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var transformSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Transformações")
-                    .font(.headline)
-                Spacer()
-                Button("Resetar") {
-                    viewModel.resetTransformations()
-                }
-            }
-            rotationSection
-            inversionSection
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var rotationSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Toggle("Aplicar rotação", isOn: $viewModel.rotationEnabled)
-
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    rotationButtons
-                }
-
-                VStack(alignment: .leading) {
-                    rotationButtons
-                }
-            }
-            .disabled(!viewModel.rotationEnabled)
-
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    Text("Ângulo")
-                    Slider(value: $viewModel.rotationAngle, in: -180...180, step: 1)
-                        .frame(maxWidth: 220)
-                        .disabled(!viewModel.rotationEnabled)
-                    Text("\(Int(viewModel.rotationAngle))°")
-                        .monospacedDigit()
-                        .frame(width: 56, alignment: .trailing)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Ângulo")
-                    Slider(value: $viewModel.rotationAngle, in: -180...180, step: 1)
-                        .disabled(!viewModel.rotationEnabled)
-                    Text("\(Int(viewModel.rotationAngle))°")
-                        .monospacedDigit()
-                }
-            }
-        }
-    }
-
-    private var inversionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Toggle("Espelhar horizontalmente", isOn: $viewModel.flipHorizontal)
-            Toggle("Espelhar verticalmente", isOn: $viewModel.flipVertical)
-        }
-    }
-
-    private var rotationButtons: some View {
-        Group {
-            Button("90° Esq.") {
-                viewModel.rotationMode = .left90
-                viewModel.rotationAngle = -90
-            }
-            Button("90° Dir.") {
-                viewModel.rotationMode = .right90
-                viewModel.rotationAngle = 90
-            }
-            Button("Ângulo") {
-                viewModel.rotationMode = .custom
             }
         }
     }

@@ -125,9 +125,15 @@ enum ImageProcessorError: LocalizedError {
 }
 
 final class ImageProcessor: @unchecked Sendable {
-    func preview(for url: URL, recipe: ProcessingRecipe, maxPixelSize: Int = 1400) -> NSImage? {
-        guard let image = loadThumbnail(from: url, maxPixelSize: maxPixelSize),
-              let rendered = render(image: image, recipe: recipe) else {
+    func preview(for url: URL, recipe: ProcessingRecipe, maxPixelSize: Int = 1024) -> NSImage? {
+        guard let image = loadThumbnail(from: url, maxPixelSize: maxPixelSize) else {
+            return nil
+        }
+        return preview(for: image, recipe: recipe)
+    }
+
+    func preview(for baseImage: CGImage, recipe: ProcessingRecipe) -> NSImage? {
+        guard let rendered = render(image: baseImage, recipe: recipe, isPreview: true) else {
             return nil
         }
 
@@ -150,7 +156,7 @@ final class ImageProcessor: @unchecked Sendable {
                     throw ImageProcessorError.failedToLoad(item.url)
                 }
 
-                guard let rendered = render(image: image, recipe: recipe) else {
+                guard let rendered = render(image: image, recipe: recipe, isPreview: false) else {
                     throw ImageProcessorError.failedToRender
                 }
 
@@ -191,7 +197,7 @@ final class ImageProcessor: @unchecked Sendable {
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
-    private func render(image: CGImage, recipe: ProcessingRecipe) -> CGImage? {
+    private func render(image: CGImage, recipe: ProcessingRecipe, isPreview: Bool) -> CGImage? {
         let baseSize = CGSize(width: image.width, height: image.height)
         let resizedSize = resolveResizedSize(from: baseSize, resize: recipe.resize)
         let radians = resolveRotationRadians(recipe.rotation)
@@ -210,7 +216,7 @@ final class ImageProcessor: @unchecked Sendable {
             return nil
         }
 
-        context.interpolationQuality = .high
+        context.interpolationQuality = isPreview ? .medium : .high
         context.setFillColor(NSColor.clear.cgColor)
         context.fill(CGRect(origin: .zero, size: canvasSize))
 
