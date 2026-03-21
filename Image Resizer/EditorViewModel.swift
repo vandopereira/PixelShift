@@ -17,6 +17,8 @@ final class EditorViewModel: ObservableObject {
     @Published var rotationEnabled = false
     @Published var rotationMode: RotationMode = .custom
     @Published var rotationAngle: Double = 0
+    @Published var flipHorizontal = false
+    @Published var flipVertical = false
     @Published var originalPreview: NSImage?
     @Published var processedPreview: NSImage?
     @Published var statusMessage: String?
@@ -30,6 +32,7 @@ final class EditorViewModel: ObservableObject {
     private let processor = ImageProcessor()
     private var previewTask: Task<Void, Never>?
     private var exportTask: Task<Void, Never>?
+    private var cancellables: Set<AnyCancellable> = []
 
     var canExport: Bool {
         !images.isEmpty && outputFolder != nil && !isExporting
@@ -45,16 +48,72 @@ final class EditorViewModel: ObservableObject {
     }
 
     func pickImages() {
-        appendImages()
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+
+        guard panel.runModal() == .OK else { return }
+        importURLs(panel.urls, replacing: false)
     }
 
     func replaceImages() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+
+        guard panel.runModal() == .OK else { return }
+        importURLs(panel.urls, replacing: true)
+    }
+
+    func importURLs(_ urls: [URL], replacing: Bool) {
         cancelPreviewTask()
-        images.removeAll()
-        selectedImageID = nil
-        originalPreview = nil
-        processedPreview = nil
-        appendImages()
+        let previousSelection = selectedImageID
+
+        let newItems = urls.compactMap(ImageFile.init(url:))
+        let addedCount: Int
+
+        if replacing {
+            images = newItems
+            addedCount = newItems.count
+        } else {
+            let uniqueItems = newItems.filter { newItem in
+                !images.contains(where: { $0.url == newItem.url })
+            }
+            images.append(contentsOf: uniqueItems)
+            addedCount = uniqueItems.count
+        }
+
+        if replacing {
+            selectedImageID = images.first?.id
+        } else {
+            selectedImageID = images.first(where: { $0.id == previousSelection })?.id ?? selectedImageID ?? images.first?.id
+        }
+        schedulePreviewRefresh(immediate: true)
+
+        if replacing {
+            updateStatus("Nova seleção carregada com \(images.count) imagem(ns).")
+        } else {
+            updateStatus("Carregadas \(addedCount) imagem(ns).")
+        }
+    }
+
+    func handleDroppedProviders(_ providers: [NSItemProvider], replacing: Bool) -> Bool {
+        let supported = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard !supported.isEmpty else { return false }
+
+        Task.detached(priority: .userInitiated) {
+            let urls = await Self.extractURLs(from: supported)
+            let filtered = urls.filter { $0.isFileURL }
+            guard !filtered.isEmpty else { return }
+
+            await MainActor.run {
+                self.importURLs(filtered, replacing: replacing)
+            }
+        }
+
+        return true
     }
 
     func removeSelectedImage() {
@@ -75,26 +134,18 @@ final class EditorViewModel: ObservableObject {
         updateStatus("Lista de imagens limpa.")
     }
 
-    private func appendImages() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-
-        guard panel.runModal() == .OK else { return }
-
-        let newItems = panel.urls.compactMap(ImageFile.init(url:))
-        let addedItems = newItems.filter { newItem in
-            !images.contains(where: { $0.url == newItem.url })
-        }
-        images.append(contentsOf: addedItems)
-
-        if selectedImage == nil {
-            selectedImageID = images.first?.id
-        }
-
-        schedulePreviewRefresh(immediate: true)
-        updateStatus("Carregadas \(addedItems.count) imagem(ns).")
+    func resetTransformations() {
+        resizeEnabled = false
+        resizeMode = .dimensions
+        targetWidth = "1920"
+        targetHeight = "1080"
+        scalePercent = "100"
+        rotationEnabled = false
+        rotationMode = .custom
+        rotationAngle = 0
+        flipHorizontal = false
+        flipVertical = false
+        updateStatus("Transformações resetadas.")
     }
 
     func pickOutputFolder() {
@@ -180,15 +231,15 @@ final class EditorViewModel: ObservableObject {
             $scalePercent.map { _ in () }.eraseToAnyPublisher(),
             $rotationEnabled.map { _ in () }.eraseToAnyPublisher(),
             $rotationMode.map { _ in () }.eraseToAnyPublisher(),
-            $rotationAngle.map { _ in () }.eraseToAnyPublisher()
+            $rotationAngle.map { _ in () }.eraseToAnyPublisher(),
+            $flipHorizontal.map { _ in () }.eraseToAnyPublisher(),
+            $flipVertical.map { _ in () }.eraseToAnyPublisher()
         )
         .sink { [weak self] _ in
             self?.schedulePreviewRefresh(immediate: false)
         }
         .store(in: &cancellables)
     }
-
-    private var cancellables: Set<AnyCancellable> = []
 
     private func schedulePreviewRefresh(immediate: Bool) {
         previewTask?.cancel()
@@ -200,37 +251,33 @@ final class EditorViewModel: ObservableObject {
             return
         }
 
-        originalPreview = NSImage(contentsOf: selectedImage.url)
-        let recipe = buildRecipe()
+        let url = selectedImage.url
+        let processedRecipe = buildRecipe()
+        let originalRecipe = ProcessingRecipe(
+            resize: nil,
+            rotation: nil,
+            flipHorizontal: false,
+            flipVertical: false
+        )
         isRenderingPreview = true
 
         previewTask = Task.detached(priority: .utility) { [processor] in
             if !immediate {
-                try? await Task.sleep(for: .milliseconds(180))
+                try? await Task.sleep(for: .milliseconds(220))
             }
 
             guard !Task.isCancelled else { return }
-            let preview = processor.preview(for: selectedImage.url, recipe: recipe)
+            let originalPreview = processor.preview(for: url, recipe: originalRecipe, maxPixelSize: 1200)
+            guard !Task.isCancelled else { return }
+            let processedPreview = processor.preview(for: url, recipe: processedRecipe, maxPixelSize: 1200)
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
-                self.processedPreview = preview
+                self.originalPreview = originalPreview
+                self.processedPreview = processedPreview
                 self.isRenderingPreview = false
             }
         }
-    }
-
-    private func refreshPreviews() {
-        guard let selectedImage else {
-            originalPreview = nil
-            processedPreview = nil
-            return
-        }
-
-        originalPreview = NSImage(contentsOf: selectedImage.url)
-
-        let recipe = buildRecipe()
-        processedPreview = processor.preview(for: selectedImage.url, recipe: recipe)
     }
 
     private func cancelPreviewTask() {
@@ -268,11 +315,53 @@ final class EditorViewModel: ObservableObject {
             rotation = nil
         }
 
-        return ProcessingRecipe(resize: resize, rotation: rotation)
+        return ProcessingRecipe(
+            resize: resize,
+            rotation: rotation,
+            flipHorizontal: flipHorizontal,
+            flipVertical: flipVertical
+        )
     }
 
     private func updateStatus(_ message: String, isError: Bool = false) {
         statusMessage = message
         statusIsError = isError
+    }
+
+    private static func extractURLs(from providers: [NSItemProvider]) async -> [URL] {
+        await withTaskGroup(of: URL?.self) { group in
+            for provider in providers {
+                group.addTask {
+                    await loadURL(from: provider)
+                }
+            }
+
+            var urls: [URL] = []
+            for await url in group {
+                if let url {
+                    urls.append(url)
+                }
+            }
+            return urls
+        }
+    }
+
+    private static func loadURL(from provider: NSItemProvider) async -> URL? {
+        await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                if let data = item as? Data,
+                   let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    continuation.resume(returning: url)
+                    return
+                }
+
+                if let url = item as? URL {
+                    continuation.resume(returning: url)
+                    return
+                }
+
+                continuation.resume(returning: nil)
+            }
+        }
     }
 }

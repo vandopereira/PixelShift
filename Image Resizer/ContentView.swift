@@ -1,29 +1,56 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @ObservedObject var viewModel: EditorViewModel
+    @State private var isDropTargeted = false
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(viewModel: viewModel)
+            SidebarView(viewModel: viewModel, isDropTargeted: $isDropTargeted)
         } detail: {
-            VStack(spacing: 0) {
-                header
-                Divider()
-                HSplitView {
-                    previewPane(title: "Original", image: viewModel.originalPreview)
-                    previewPane(title: "Preview", image: viewModel.processedPreview)
+            ZStack {
+                VStack(spacing: 0) {
+                    header
+                    Divider()
+                    HSplitView {
+                        previewPane(title: "Original", image: viewModel.originalPreview)
+                        previewPane(title: "Preview", image: viewModel.processedPreview)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Divider()
+                    ScrollView {
+                        InspectorView(viewModel: viewModel)
+                            .padding(20)
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Divider()
-                ScrollView {
-                    InspectorView(viewModel: viewModel)
+
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
+                        )
                         .padding(20)
+                        .overlay(
+                            VStack(spacing: 10) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.system(size: 40))
+                                Text("Larga imagens aqui")
+                                    .font(.headline)
+                            }
+                            .foregroundStyle(Color.accentColor)
+                        )
+                        .allowsHitTesting(false)
                 }
             }
         }
         .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+        .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
+            viewModel.handleDroppedProviders(providers, replacing: false)
+        }
     }
 
     private var header: some View {
@@ -31,7 +58,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("PixelShift")
                     .font(.system(size: 28, weight: .bold))
-                Text("Conversão, resize e rotação local para macOS")
+                Text("Conversão, resize, inversão e rotação local para macOS")
                     .foregroundStyle(.secondary)
             }
 
@@ -116,6 +143,7 @@ struct ContentView: View {
 
 private struct SidebarView: View {
     @ObservedObject var viewModel: EditorViewModel
+    @Binding var isDropTargeted: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -143,7 +171,7 @@ private struct SidebarView: View {
                 ContentUnavailableView(
                     "Sem imagens",
                     systemImage: "photo.stack",
-                    description: Text("Adicione uma ou mais imagens para começar.")
+                    description: Text("Adicione ou arraste uma ou mais imagens para começar.")
                 )
             } else {
                 List(selection: $viewModel.selectedImageID) {
@@ -178,6 +206,7 @@ private struct SidebarView: View {
             }
         }
         .padding(16)
+        .background(isDropTargeted ? Color.accentColor.opacity(0.06) : .clear)
     }
 }
 
@@ -190,13 +219,13 @@ private struct InspectorView: View {
                 HStack(alignment: .top, spacing: 28) {
                     formatSection
                     resizeSection
-                    rotationSection
+                    transformSection
                 }
 
                 VStack(alignment: .leading, spacing: 18) {
                     formatSection
                     resizeSection
-                    rotationSection
+                    transformSection
                 }
             }
 
@@ -289,11 +318,24 @@ private struct InspectorView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var transformSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Transformações")
+                    .font(.headline)
+                Spacer()
+                Button("Resetar") {
+                    viewModel.resetTransformations()
+                }
+            }
+            rotationSection
+            inversionSection
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var rotationSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Rotação")
-                .font(.headline)
-
             Toggle("Aplicar rotação", isOn: $viewModel.rotationEnabled)
 
             ViewThatFits(in: .horizontal) {
@@ -327,7 +369,13 @@ private struct InspectorView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var inversionSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Espelhar horizontalmente", isOn: $viewModel.flipHorizontal)
+            Toggle("Espelhar verticalmente", isOn: $viewModel.flipVertical)
+        }
     }
 
     private var rotationButtons: some View {

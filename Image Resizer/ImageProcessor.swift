@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 struct ProcessingRecipe: Sendable {
     let resize: ResizeSettings?
     let rotation: RotationSettings?
+    let flipHorizontal: Bool
+    let flipVertical: Bool
 }
 
 enum ResizeSettings: Sendable {
@@ -87,12 +89,14 @@ struct ImageFile: Identifiable, Equatable, Sendable {
 
     init?(url: URL) {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
             return nil
         }
 
         self.url = url
-        self.pixelSize = CGSize(width: image.width, height: image.height)
+        self.pixelSize = CGSize(width: width, height: height)
     }
 
     var dimensionsDescription: String {
@@ -121,8 +125,8 @@ enum ImageProcessorError: LocalizedError {
 }
 
 final class ImageProcessor: @unchecked Sendable {
-    func preview(for url: URL, recipe: ProcessingRecipe) -> NSImage? {
-        guard let image = loadImage(from: url),
+    func preview(for url: URL, recipe: ProcessingRecipe, maxPixelSize: Int = 1400) -> NSImage? {
+        guard let image = loadThumbnail(from: url, maxPixelSize: maxPixelSize),
               let rendered = render(image: image, recipe: recipe) else {
             return nil
         }
@@ -173,17 +177,31 @@ final class ImageProcessor: @unchecked Sendable {
         ] as CFDictionary)
     }
 
+    private func loadThumbnail(from url: URL, maxPixelSize: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return nil
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
     private func render(image: CGImage, recipe: ProcessingRecipe) -> CGImage? {
         let baseSize = CGSize(width: image.width, height: image.height)
         let resizedSize = resolveResizedSize(from: baseSize, resize: recipe.resize)
-        let rotationDegrees = resolveRotationDegrees(recipe.rotation)
-        let canvasSize = resolveCanvasSize(for: resizedSize, rotationDegrees: rotationDegrees)
+        let radians = resolveRotationRadians(recipe.rotation)
+        let canvasSize = resolveCanvasSize(for: resizedSize, rotationRadians: radians)
 
         guard let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(
                 data: nil,
-                width: max(Int(canvasSize.width.rounded()), 1),
-                height: max(Int(canvasSize.height.rounded()), 1),
+                width: max(Int(canvasSize.width.rounded(.up)), 1),
+                height: max(Int(canvasSize.height.rounded(.up)), 1),
                 bitsPerComponent: 8,
                 bytesPerRow: 0,
                 space: colorSpace,
@@ -197,8 +215,11 @@ final class ImageProcessor: @unchecked Sendable {
         context.fill(CGRect(origin: .zero, size: canvasSize))
 
         context.translateBy(x: canvasSize.width / 2, y: canvasSize.height / 2)
-        context.rotate(by: rotationDegrees * .pi / 180)
-        context.scaleBy(x: 1, y: -1)
+        context.rotate(by: radians)
+
+        let scaleX: CGFloat = recipe.flipHorizontal ? -1 : 1
+        let scaleY: CGFloat = recipe.flipVertical ? 1 : -1
+        context.scaleBy(x: scaleX, y: scaleY)
 
         let drawRect = CGRect(
             x: -resizedSize.width / 2,
@@ -225,21 +246,21 @@ final class ImageProcessor: @unchecked Sendable {
         }
     }
 
-    private func resolveRotationDegrees(_ rotation: RotationSettings?) -> CGFloat {
+    private func resolveRotationRadians(_ rotation: RotationSettings?) -> CGFloat {
         guard let rotation else { return 0 }
 
         switch rotation {
         case .degrees(let value):
-            return CGFloat(value)
+            return CGFloat(value) * .pi / 180
         }
     }
 
-    private func resolveCanvasSize(for size: CGSize, rotationDegrees: CGFloat) -> CGSize {
-        let radians = rotationDegrees * .pi / 180
-        let transform = CGAffineTransform(rotationAngle: radians)
-        let rect = CGRect(origin: CGPoint(x: -size.width / 2, y: -size.height / 2), size: size)
-        let rotated = rect.applying(transform)
-        return CGSize(width: abs(rotated.width), height: abs(rotated.height))
+    private func resolveCanvasSize(for size: CGSize, rotationRadians: CGFloat) -> CGSize {
+        let cosValue = abs(cos(rotationRadians))
+        let sinValue = abs(sin(rotationRadians))
+        let width = (size.width * cosValue) + (size.height * sinValue)
+        let height = (size.width * sinValue) + (size.height * cosValue)
+        return CGSize(width: width, height: height)
     }
 
     private func write(image: CGImage, to url: URL, format: OutputFormat) throws {
